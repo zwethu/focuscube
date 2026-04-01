@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FocusCube Gateway</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main class="container">
+    <h1>FocusCube Gateway</h1>
+    <p class="subtitle">Raspberry Pi gateway dashboard</p>
+
+    <section class="card">
+      <h2>Gateway status</h2>
+      <p>{{ data.status }}</p>
+    </section>
+
+    <section class="grid">
+      <div class="card"><h3>Temperature</h3><p>{{ data.temp_c }}</p></div>
+      <div class="card"><h3>Humidity</h3><p>{{ data.humidity }}</p></div>
+      <div class="card"><h3>Light</h3><p>{{ data.lux }}</p></div>
+      <div class="card"><h3>Distance</h3><p>{{ data.dist_cm }}</p></div>
+      <div class="card"><h3>MQ135 Raw</h3><p>{{ data.mq135_raw }}</p></div>
+      <div class="card"><h3>MQ135 Alert</h3><p>{{ data.mq135_alert }}</p></div>
+      <div class="card"><h3>PIR</h3><p>{{ data.pir }}</p></div>
+    </section>
+  </main>
+</body>
+</html>
