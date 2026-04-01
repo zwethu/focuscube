@@ -1,0 +1,12 @@
+{
+    "folders": [
+        {
+            "name": "Controller (ESP32)",
+            "path": "./focus_cube_controller"
+        },
+        {
+            "name": "RPi Gateway",
+            "path": "./rpi_gateway"
+        }
+    ]
+}
