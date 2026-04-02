@@ -1,0 +1,30 @@
+[mqtt]
+host = "127.0.0.1"
+port = 1883
+client_id = "focuscube-gateway"
+keepalive_sec = 60
+
+[topics]
+subscriptions = [
+  "focuscube/sender/telemetry",
+  "focuscube/sender/event/pir",
+  "focuscube/listener/ack",
+]
+cmd_topic = "focuscube/listener/cmd"
+ack_topic = "focuscube/listener/ack"
+
+[thresholds]
+temp_min = 20.0
+temp_max = 27.0
+lux_min = 200.0
+lux_max = 1000.0
+dist_near_cm = 50.0
+dist_far_cm = 65.0
+mq135_bad_do = 1
+mq135_mid_low = 1500
+mq135_good_low = 2500
+
+[api]
+host = "0.0.0.0"
+port = 5000
+debug = false

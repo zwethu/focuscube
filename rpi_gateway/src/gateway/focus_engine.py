@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Deque
 
@@ -184,7 +184,7 @@ def score_event(
         label=state.value,
         components=components,
         sensors=sensors,
-        derived=derived,
+        derived=asdict(derived),
     )
 
 
