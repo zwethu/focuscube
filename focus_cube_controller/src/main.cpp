@@ -23,20 +23,27 @@
 //   - Subscribes to TOPIC_TELE → uses Sender’s temp for fan
 // ══════════════════════════════════════════════════════════
 
+
 // ── Listener-only includes + objects ─────────────────────
 #ifdef DEVICE_LISTENER
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH  128
+#define SCREEN_HEIGHT 32
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
 bool fanOn = false;      // fan state — persists between loops
 bool buzzerBusy = false; // (kept for future use)
-int lastPirState = LOW;  // tracks previous PIR state for rising edge
+int  lastPirState = LOW; // tracks previous PIR state for rising edge
 
 // values coming from Sender telemetry
 float remoteTemp = NAN;
-float remoteHum = NAN;
-float remoteLux = NAN;
+float remoteHum  = NAN;
+float remoteLux  = NAN;
 #endif
+
 
 // ── Shared objects (both devices) ────────────────────────
 DHT dht(PIN_DHT22, DHT22);
@@ -44,25 +51,23 @@ BH1750 lightMeter;
 WiFiClient wifiClient;
 PubSubClient mqtt(wifiClient);
 
+
 // ══════════════════════════════════════════════════════════
 // ─────────────────────── SENDER ───────────────────────────
 // ══════════════════════════════════════════════════════════
 #ifdef DEVICE_SENDER
 
-float readDistance()
-{
+float readDistance() {
     float sum = 0;
     int ok = 0;
-    for (int i = 0; i < 3; i++)
-    {
+    for (int i = 0; i < 3; i++) {
         digitalWrite(PIN_TRIG, LOW);
         delayMicroseconds(3);
         digitalWrite(PIN_TRIG, HIGH);
         delayMicroseconds(10);
         digitalWrite(PIN_TRIG, LOW);
         long d = pulseIn(PIN_ECHO, HIGH, 30000);
-        if (d > 0)
-        {
+        if (d > 0) {
             sum += d / 58.0f;
             ok++;
         }
@@ -71,16 +76,13 @@ float readDistance()
     return ok ? sum / ok : -1.0f;
 }
 
-void connectWiFi()
-{
+void connectWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("[WiFi] Connecting");
     unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        if (millis() - start > 15000)
-        {
+    while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start > 15000) {
             Serial.println("\n[WiFi] FAILED");
             return;
         }
@@ -90,26 +92,20 @@ void connectWiFi()
     Serial.println("\n[WiFi] IP: " + WiFi.localIP().toString());
 }
 
-void connectMQTT()
-{
+void connectMQTT() {
     mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-    while (!mqtt.connected())
-    {
+    while (!mqtt.connected()) {
         Serial.print("[MQTT] Connecting as focuscube-sender ...");
-        if (mqtt.connect("focuscube-sender"))
-        {
+        if (mqtt.connect("focuscube-sender")) {
             Serial.println("OK");
-        }
-        else
-        {
+        } else {
             Serial.printf("FAILED rc=%d retry 3s\n", mqtt.state());
             delay(3000);
         }
     }
 }
 
-void setup()
-{
+void setup() {
     Serial.begin(115200);
     Serial.println("[SENDER] Booting...");
 
@@ -135,51 +131,46 @@ void setup()
     Serial.println("[SENDER] Ready");
 }
 
-void loop()
-{
+void loop() {
     if (!mqtt.connected())
         connectMQTT();
     mqtt.loop();
 
-    float temp = dht.readTemperature();       // °C
-    float hum = dht.readHumidity();           // %
-    float dist = readDistance();              // cm, -1 if no echo
-    int pir = digitalRead(PIN_PIR);           // HIGH = motion
-    int mq_raw = analogRead(PIN_MQ135_AO);    // 0–4095
-    int mq_alert = digitalRead(PIN_MQ135_DO); // HIGH = bad air
-    float lux = lightMeter.readLightLevel();  // lux
+    float temp    = dht.readTemperature();      // °C
+    float hum     = dht.readHumidity();         // %
+    float dist    = readDistance();             // cm, -1 if no echo
+    int   pir     = digitalRead(PIN_PIR);       // HIGH = motion
+    int   mq_raw  = analogRead(PIN_MQ135_AO);   // 0–4095
+    int   mq_alert= digitalRead(PIN_MQ135_DO);  // HIGH = bad air
+    float lux     = lightMeter.readLightLevel();// lux
 
     bool buzzerRule = (pir == HIGH);
-    if (buzzerRule)
-    {
+    if (buzzerRule) {
         digitalWrite(PIN_BUZZER, LOW);
         delay(1000);
         digitalWrite(PIN_BUZZER, HIGH);
         delay(2000);
         Serial.println("[RULE] Buzzer beeping");
-    }
-    else
-    {
+    } else {
         digitalWrite(PIN_BUZZER, HIGH);
     }
 
     static unsigned long lastSend = 0;
-    if (millis() - lastSend >= TELE_INTERVAL)
-    {
+    if (millis() - lastSend >= TELE_INTERVAL) {
         lastSend = millis();
 
         StaticJsonDocument<512> doc;
         doc["node_id"] = "focuscube-sender";
-        doc["type"] = "telemetry";
-        JsonObject s = doc["payload"].createNestedObject("sensors");
-        s["temp_c"] = isnan(temp) ? -1 : roundf(temp * 10) / 10;
-        s["humidity"] = isnan(hum) ? -1 : roundf(hum * 10) / 10;
-        s["lux"] = lux;
-        s["dist_cm"] = dist;
+        doc["type"]    = "telemetry";
+        JsonObject s   = doc["payload"].createNestedObject("sensors");
+        s["temp_c"]    = isnan(temp) ? -1 : roundf(temp * 10) / 10;
+        s["humidity"]  = isnan(hum)  ? -1 : roundf(hum  * 10) / 10;
+        s["lux"]       = lux;
+        s["dist_cm"]   = dist;
         s["mq135_raw"] = mq_raw;
         s["mq135_alert"] = mq_alert;
-        s["pir"] = pir;
-        doc["rssi"] = WiFi.RSSI();
+        s["pir"]       = pir;
+        doc["rssi"]    = WiFi.RSSI();
 
         char buf[512];
         serializeJson(doc, buf);
@@ -190,7 +181,7 @@ void loop()
         Serial.printf("  Humidity : %.1f %%\n", isnan(hum) ? -1 : hum);
         Serial.printf("  Lux      : %.1f lux\n", lux);
         Serial.printf("  Distance : %.1f cm\n", dist);
-        Serial.printf("  PIR : %s\n", pir ? "MOTION" : "still");
+        Serial.printf("  PIR      : %s\n", pir ? "MOTION" : "still");
         Serial.printf("  MQ135    : raw=%d  alert=%s\n", mq_raw, mq_alert ? "BAD" : "OK");
         Serial.printf("  RSSI     : %d dBm\n", WiFi.RSSI());
         Serial.println("────────────────────────────────────\n");
@@ -199,43 +190,28 @@ void loop()
 
 #endif // DEVICE_SENDER
 
+
 // ══════════════════════════════════════════════════════════
 // ────────────────────── LISTENER ──────────────────────────
 // ══════════════════════════════════════════════════════════
 #ifdef DEVICE_LISTENER
 
-void setTrafficLight(float lux)
-{
+void setTrafficLight(float lux) {
+    // turn all off first
     digitalWrite(PIN_LED_RED, LOW);
     digitalWrite(PIN_LED_YELLOW, LOW);
     digitalWrite(PIN_LED_GREEN, LOW);
 
-    if (lux < 50)
-    {
-        digitalWrite(PIN_LED_YELLOW, LOW);
-        digitalWrite(PIN_LED_GREEN, LOW);
+    if (lux < 50.0f) {
         digitalWrite(PIN_LED_RED, HIGH);
-    }
-
-    else if (lux < 200)
-    {
-
-        digitalWrite(PIN_LED_GREEN, LOW);
-        digitalWrite(PIN_LED_RED, LOW);
+    } else if (lux < 200.0f) {
         digitalWrite(PIN_LED_YELLOW, HIGH);
-    }
-
-    else
-    {
-        digitalWrite(PIN_LED_YELLOW, LOW);
-
-        digitalWrite(PIN_LED_RED, LOW);
+    } else {
         digitalWrite(PIN_LED_GREEN, HIGH);
     }
 }
 
-void showOLED(float temp, float hum, int mq_raw, int mq_alert, float lux, bool fan)
-{
+void showOLED(float temp, float hum, int mq_raw, int mq_alert, float lux, bool fan) {
     display.clearDisplay();
     display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
@@ -263,35 +239,30 @@ void showOLED(float temp, float hum, int mq_raw, int mq_alert, float lux, bool f
 }
 
 // ── MQTT callback: receive Sender telemetry ───────────────
-void onTelemetry(char *topic, byte *payload, unsigned int len)
-{
+void onTelemetry(char *topic, byte *payload, unsigned int len) {
     StaticJsonDocument<512> doc;
     DeserializationError err = deserializeJson(doc, payload, len);
-    if (err)
-    {
+    if (err) {
         Serial.println("[MQTT RX] Failed to parse telemetry JSON");
         return;
     }
 
     JsonObject s = doc["payload"]["sensors"];
-    remoteTemp = s["temp_c"] | NAN;
-    remoteHum = s["humidity"] | NAN;
-    remoteLux = s["lux"] | NAN;
+    remoteTemp = s["temp_c"]  | NAN;
+    remoteHum  = s["humidity"]| NAN;
+    remoteLux  = s["lux"]     | NAN;
 
     Serial.printf("[MQTT RX] remoteTemp=%.1f  remoteHum=%.1f  remoteLux=%.1f\n",
                   remoteTemp, remoteHum, remoteLux);
 }
 
-void connectWiFi()
-{
+void connectWiFi() {
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
     Serial.print("[WiFi] Connecting");
     unsigned long start = millis();
-    while (WiFi.status() != WL_CONNECTED)
-    {
-        if (millis() - start > 15000)
-        {
+    while (WiFi.status() != WL_CONNECTED) {
+        if (millis() - start > 15000) {
             Serial.println("\n[WiFi] FAILED");
             return;
         }
@@ -301,29 +272,23 @@ void connectWiFi()
     Serial.println("\n[WiFi] IP: " + WiFi.localIP().toString());
 }
 
-void connectMQTT()
-{
+void connectMQTT() {
     mqtt.setServer(MQTT_BROKER, MQTT_PORT);
     mqtt.setCallback(onTelemetry);
 
-    while (!mqtt.connected())
-    {
+    while (!mqtt.connected()) {
         Serial.print("[MQTT] Connecting as focuscube-listener ...");
-        if (mqtt.connect("focuscube-listener"))
-        {
+        if (mqtt.connect("focuscube-listener")) {
             Serial.println("OK");
             mqtt.subscribe(TOPIC_TELE, 1);
-        }
-        else
-        {
+        } else {
             Serial.printf("FAILED rc=%d retry 3s\n", mqtt.state());
             delay(3000);
         }
     }
 }
 
-void setup()
-{
+void setup() {
     Serial.begin(115200);
     Serial.println("[LISTENER] Booting...");
 
@@ -351,8 +316,7 @@ void setup()
 
     if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR))
         Serial.println("[OLED] Not found - check wiring");
-    else
-    {
+    else {
         display.clearDisplay();
         display.setTextSize(1);
         display.setTextColor(SSD1306_WHITE);
@@ -366,47 +330,40 @@ void setup()
     Serial.println("[LISTENER] Ready");
 }
 
-void loop()
-{
+void loop() {
     if (!mqtt.connected())
         connectMQTT();
     mqtt.loop();
 
     // ── Local sensors only (lux/temp/hum come from Sender via MQTT) ──
-    int pir = digitalRead(PIN_PIR);
-    int mq_raw = analogRead(PIN_MQ135_AO);
-    int mq_alert = digitalRead(PIN_MQ135_DO);
+    int pir     = digitalRead(PIN_PIR);
+    int mq_raw  = analogRead(PIN_MQ135_AO);
+    int mq_alert= digitalRead(PIN_MQ135_DO);
 
     Serial.printf("[MQTT/FAN] remoteTemp=%.2f  fanOn=%s\n",
                   remoteTemp, fanOn ? "ON" : "OFF");
 
     // ── Rule 1: Fan hysteresis using remoteTemp ───────────
-    if (isnan(remoteTemp))
-    {
+    if (isnan(remoteTemp)) {
         Serial.println("[FAN DEBUG] remoteTemp is NaN -> no telemetry yet");
-    }
-    else
-    {
-        if (remoteTemp >= FAN_ON_TEMP)
-        {
+    } else {
+        if (remoteTemp >= FAN_ON_TEMP) {
             fanOn = true;
             Serial.println("[FAN] threshold reached (remote), turning ON");
         }
-        if (remoteTemp <= FAN_OFF_TEMP)
-        {
+        if (remoteTemp <= FAN_OFF_TEMP) {
             fanOn = false;
             Serial.println("[FAN] threshold reached (remote), turning OFF");
         }
     }
 
     // active-LOW relay: LOW = ON, HIGH = OFF
-    digitalWrite(PIN_FAN, fanOn ? HIGH : LOW);
+    digitalWrite(PIN_FAN, fanOn ? LOW : HIGH);
 
     // ── Rule 2: Traffic light LEDs using remoteLux ────────
     if (isnan(remoteLux))
         Serial.println("[LUX DEBUG] remoteLux is NaN -> no telemetry yet");
-    else
-    {
+    else {
         Serial.printf("[LUX DEBUG] remoteLux=%.1f lux\n", remoteLux);
         setTrafficLight(remoteLux);
     }
