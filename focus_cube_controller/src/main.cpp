@@ -42,6 +42,10 @@ int  lastPirState = LOW; // tracks previous PIR state for rising edge
 float remoteTemp = NAN;
 float remoteHum  = NAN;
 float remoteLux  = NAN;
+// ── ML mood prediction result + screen flip ──
+char  currentMood[16]    = "WAITING";
+bool  showPredScreen     = false;
+unsigned long lastFlipMs = 0;
 #endif
 
 
@@ -238,20 +242,56 @@ void showOLED(float temp, float hum, int mq_raw, int mq_alert, float lux, bool f
     display.display();
 }
 
+void showMoodOLED(const char* mood) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+
+    display.setCursor(0, 0);
+    display.print("FOCUS LEVEL:");
+
+    display.setTextSize(2);
+    int len = strlen(mood);
+    int x = max(0, (128 - len * 12) / 2);  // center the word
+    display.setCursor(x, 12);
+    display.print(mood);
+
+    display.setTextSize(1);
+    display.setCursor(0, 25);
+    if (strcmp(mood, "GOOD") == 0)         display.print("Env optimal :)");
+    else if (strcmp(mood, "NEUTRAL") == 0) display.print("Mild distraction");
+    else if (strcmp(mood, "BAD") == 0)     display.print("Poor environment!");
+    else                                    display.print("Waiting for RPi...");
+
+    display.display();
+}
+
 // ── MQTT callback: receive Sender telemetry ───────────────
-void onTelemetry(char *topic, byte *payload, unsigned int len) {
+// ── MQTT callback: handles telemetry + cmd topics ────────
+void onMqttMessage(char *topic, byte *payload, unsigned int len) {
     StaticJsonDocument<512> doc;
-    DeserializationError err = deserializeJson(doc, payload, len);
-    if (err) {
-        Serial.println("[MQTT RX] Failed to parse telemetry JSON");
+    if (deserializeJson(doc, payload, len)) {
+        Serial.println("[MQTT RX] JSON parse error");
         return;
     }
 
-    JsonObject s = doc["payload"]["sensors"];
-    remoteTemp = s["temp_c"]  | NAN;
-    remoteHum  = s["humidity"]| NAN;
-    remoteLux  = s["lux"]     | NAN;
+    // ── CMD topic: mood prediction from RPi ──
+    if (strcmp(topic, TOPIC_CMD) == 0) {
+        const char* action = doc["payload"]["action"] | "";
+        const char* reason = doc["payload"]["reason"] | "";
+        if (strcmp(action, "mood") == 0) {
+            strncpy(currentMood, reason, sizeof(currentMood) - 1);
+            currentMood[sizeof(currentMood) - 1] = '\0';
+            Serial.printf("[CMD] Mood updated: %s\n", currentMood);
+        }
+        return;
+    }
 
+    // ── TELE topic: sensor data from Sender ──
+    JsonObject s = doc["payload"]["sensors"];
+    remoteTemp = s["temp_c"]   | NAN;
+    remoteHum  = s["humidity"] | NAN;
+    remoteLux  = s["lux"]      | NAN;
     Serial.printf("[MQTT RX] remoteTemp=%.1f  remoteHum=%.1f  remoteLux=%.1f\n",
                   remoteTemp, remoteHum, remoteLux);
 }
@@ -274,15 +314,15 @@ void connectWiFi() {
 
 void connectMQTT() {
     mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-    mqtt.setCallback(onTelemetry);
+    mqtt.setCallback(onMqttMessage);
 
     while (!mqtt.connected()) {
         Serial.print("[MQTT] Connecting as focuscube-listener ...");
         if (mqtt.connect("focuscube-listener")) {
             Serial.println("OK");
-            mqtt.subscribe(TOPIC_TELE, 1);
+            mqtt.subscribe(TOPIC_CMD, 1);
         } else {
-            Serial.printf("FAILED rc=%d retry 3s\n", mqtt.state());
+            Serial.printf("FAILED rc=%d     retry 3s\n", mqtt.state());
             delay(3000);
         }
     }
@@ -374,7 +414,16 @@ void loop() {
     lastPirState = pir;
 
     // ── Rule 4: OLED update ───────────────────────────────
-    showOLED(remoteTemp, remoteHum, mq_raw, mq_alert, remoteLux, fanOn);
+    // ── Rule 4: OLED alternates sensor view ↔ mood prediction ──
+    if (millis() - lastFlipMs >= 3000) {
+        lastFlipMs    = millis();
+        showPredScreen = !showPredScreen;
+    }
+    if (showPredScreen) {
+        showMoodOLED(currentMood);
+    } else {
+        showOLED(remoteTemp, remoteHum, mq_raw, mq_alert, remoteLux, fanOn);
+    }
 
     Serial.printf("[LISTENER] temp=%.1f fan=%s lux=%.0f air=%s pir=%s\n",
                   remoteTemp,
