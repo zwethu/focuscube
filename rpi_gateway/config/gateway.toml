@@ -11,7 +11,6 @@ subscriptions = [
   "focuscube/listener/ack",
 ]
 cmd_topic = "focuscube/listener/cmd"
-ack_topic = "focuscube/listener/ack"
 
 [thresholds]
 temp_min = 20.0
