@@ -20,12 +20,7 @@
 //   - Rule 2: Traffic light LEDs based on lux level
 //   - Rule 3: Short buzzer beep on local PIR rising edge
 //   - Rule 4: OLED shows live sensor + actuator state
-//   - Subscribes to TOPIC_CMD → handles play/stop buzzer
-//   - Publishes ACK after executing command → TOPIC_ACK
-//
-// platformio.ini build flags:
-//   Sender   → build_flags = -D DEVICE_SENDER
-//   Listener → build_flags = -D DEVICE_LISTENER
+//   - Subscribes to TOPIC_TELE → uses Sender’s temp for fan
 // ══════════════════════════════════════════════════════════
 
 // ── Listener-only includes + objects ─────────────────────
@@ -34,8 +29,13 @@
 #include <Adafruit_SSD1306.h>
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 bool fanOn = false;      // fan state — persists between loops
-bool buzzerBusy = false; // prevents PIR beep interrupting a command
+bool buzzerBusy = false; // (kept for future use)
 int lastPirState = LOW;  // tracks previous PIR state for rising edge
+
+// values coming from Sender telemetry
+float remoteTemp = NAN;
+float remoteHum = NAN;
+float remoteLux = NAN;
 #endif
 
 // ── Shared objects (both devices) ────────────────────────
@@ -49,9 +49,6 @@ PubSubClient mqtt(wifiClient);
 // ══════════════════════════════════════════════════════════
 #ifdef DEVICE_SENDER
 
-// ── readDistance() ────────────────────────────────────────
-// Fires HC-SR04 3 times and returns average distance in cm.
-// Returns -1 if no echo received within timeout.
 float readDistance()
 {
     float sum = 0;
@@ -74,9 +71,6 @@ float readDistance()
     return ok ? sum / ok : -1.0f;
 }
 
-// ── connectWiFi() ─────────────────────────────────────────
-// Joins the WiFi network from config.h.
-// Times out after 15 seconds if AP is unreachable.
 void connectWiFi()
 {
     WiFi.mode(WIFI_STA);
@@ -96,10 +90,6 @@ void connectWiFi()
     Serial.println("\n[WiFi] IP: " + WiFi.localIP().toString());
 }
 
-// ── connectMQTT() ─────────────────────────────────────────
-// Connects to Mosquitto broker as "focuscube-sender".
-// Sender only publishes — no callback needed.
-// Retries every 3 seconds on failure.
 void connectMQTT()
 {
     mqtt.setServer(MQTT_BROKER, MQTT_PORT);
@@ -118,7 +108,6 @@ void connectMQTT()
     }
 }
 
-// ── setup() ───────────────────────────────────────────────
 void setup()
 {
     Serial.begin(115200);
@@ -131,8 +120,6 @@ void setup()
     pinMode(PIN_MQ135_AO, INPUT);      // MQ135 analog raw
     pinMode(PIN_BUTTON, INPUT_PULLUP); // tactile button
     pinMode(PIN_BUZZER, OUTPUT);       // active buzzer
-    pinMode(PIN_DHT22, INPUT);         // DHT22 temperature/humidity sensor
-    pinMode(LUX_LOW_THRESHOLD, INPUT); // BH1750 light sensor
     digitalWrite(PIN_BUZZER, LOW);     // buzzer OFF at boot
 
     dht.begin();
@@ -148,14 +135,12 @@ void setup()
     Serial.println("[SENDER] Ready");
 }
 
-// ── loop() ────────────────────────────────────────────────
 void loop()
 {
     if (!mqtt.connected())
         connectMQTT();
     mqtt.loop();
 
-    // ── Read all sensors ──────────────────────────────────
     float temp = dht.readTemperature();       // °C
     float hum = dht.readHumidity();           // %
     float dist = readDistance();              // cm, -1 if no echo
@@ -164,60 +149,52 @@ void loop()
     int mq_alert = digitalRead(PIN_MQ135_DO); // HIGH = bad air
     float lux = lightMeter.readLightLevel();  // lux
 
- // ── Rule: Buzzer repeating beep while motion detected ────
-bool buzzerRule = (pir == HIGH);
+    bool buzzerRule = (pir == HIGH);
+    if (buzzerRule)
+    {
+        digitalWrite(PIN_BUZZER, LOW);
+        delay(1000);
+        digitalWrite(PIN_BUZZER, HIGH);
+        delay(2000);
+        Serial.println("[RULE] Buzzer beeping");
+    }
+    else
+    {
+        digitalWrite(PIN_BUZZER, HIGH);
+    }
 
-if (buzzerRule) {
-    digitalWrite(PIN_BUZZER, LOW); delay(1000);
-    digitalWrite(PIN_BUZZER, HIGH);  delay(2000);
-    Serial.println("[RULE] Buzzer beeping");
-} else {
-    digitalWrite(PIN_BUZZER, HIGH);
-}
+    static unsigned long lastSend = 0;
+    if (millis() - lastSend >= TELE_INTERVAL)
+    {
+        lastSend = millis();
 
-// ── Telemetry publish (every TELE_INTERVAL ms) ────────
-static unsigned long lastSend = 0;
-if (millis() - lastSend >= TELE_INTERVAL) {
-    lastSend = millis();
+        StaticJsonDocument<512> doc;
+        doc["node_id"] = "focuscube-sender";
+        doc["type"] = "telemetry";
+        JsonObject s = doc["payload"].createNestedObject("sensors");
+        s["temp_c"] = isnan(temp) ? -1 : roundf(temp * 10) / 10;
+        s["humidity"] = isnan(hum) ? -1 : roundf(hum * 10) / 10;
+        s["lux"] = lux;
+        s["dist_cm"] = dist;
+        s["mq135_raw"] = mq_raw;
+        s["mq135_alert"] = mq_alert;
+        s["pir"] = pir;
+        doc["rssi"] = WiFi.RSSI();
 
-    StaticJsonDocument<512> doc;
-    doc["node_id"] = "focuscube-sender";
-    doc["type"]    = "telemetry";
-    JsonObject s   = doc["payload"].createNestedObject("sensors");
-    s["temp_c"]      = isnan(temp) ? -1 : roundf(temp * 10) / 10;
-    s["humidity"]    = isnan(hum)  ? -1 : roundf(hum  * 10) / 10;
-    s["lux"]         = lux;
-    s["dist_cm"]     = dist;
-    s["mq135_raw"]   = mq_raw;
-    s["mq135_alert"] = mq_alert;
-    s["pir"]         = pir;
-    doc["rssi"]      = WiFi.RSSI();
+        char buf[512];
+        serializeJson(doc, buf);
+        mqtt.publish(TOPIC_TELE, buf, true);
 
-    char buf[512];
-    serializeJson(doc, buf);
-    mqtt.publish(TOPIC_TELE, buf, true);
-
-    Serial.println("────────── FocusSense TX ──────────");
-    Serial.printf("  Temp     : %.1f C\n",   isnan(temp) ? -1 : temp);
-    Serial.printf("  Humidity : %.1f %%\n",  isnan(hum)  ? -1 : hum);
-    Serial.printf("  Lux      : %.1f lux\n", lux);
-    Serial.printf("  Distance : %.1f cm\n",  dist);
-    Serial.printf("  PIR : %s\n", pir ? "MOTION" : "still");
-    Serial.printf("  MQ135    : raw=%d  alert=%s\n", mq_raw, mq_alert ? "BAD" : "OK");
-    Serial.printf("  RSSI     : %d dBm\n",   WiFi.RSSI());
-    Serial.println("────────────────────────────────────\n");
-}
-
-// ── PIR event publish (rising edge only — data only) ──
-// This just notifies the RPi gateway that motion started.
-// It does NOT send a "play" command to the Listener buzzer.
-// static int lastPir = LOW;
-// if (pir == HIGH && lastPir == LOW) {
-//     mqtt.publish(TOPIC_PIR,
-//         "{\"event\":\"motion_detected\",\"node\":\"focuscube-sender\"}");
-//     Serial.println("[EVENT] PIR rising edge published");
-// }
-// lastPir = pir;
+        Serial.println("────────── FocusSense TX ──────────");
+        Serial.printf("  Temp     : %.1f C\n", isnan(temp) ? -1 : temp);
+        Serial.printf("  Humidity : %.1f %%\n", isnan(hum) ? -1 : hum);
+        Serial.printf("  Lux      : %.1f lux\n", lux);
+        Serial.printf("  Distance : %.1f cm\n", dist);
+        Serial.printf("  PIR : %s\n", pir ? "MOTION" : "still");
+        Serial.printf("  MQ135    : raw=%d  alert=%s\n", mq_raw, mq_alert ? "BAD" : "OK");
+        Serial.printf("  RSSI     : %d dBm\n", WiFi.RSSI());
+        Serial.println("────────────────────────────────────\n");
+    }
 }
 
 #endif // DEVICE_SENDER
@@ -227,57 +204,6 @@ if (millis() - lastSend >= TELE_INTERVAL) {
 // ══════════════════════════════════════════════════════════
 #ifdef DEVICE_LISTENER
 
-// ── onCommand() ───────────────────────────────────────────
-// MQTT callback triggered when a message arrives on
-// TOPIC_CMD. Parses JSON payload.action and either:
-//   "play" → beep buzzer 3 times then publish ACK
-//   "stop" → silence buzzer then publish ACK
-// buzzerBusy flag prevents PIR beep from interrupting
-void onCommand(char *topic, byte *payload, unsigned int len)
-{
-    StaticJsonDocument<256> doc;
-    if (deserializeJson(doc, payload, len))
-        return;
-
-    const char *action = doc["payload"]["action"] | "";
-    Serial.printf("[CMD] action=%s\n", action);
-
-    if (strcmp(action, "play") == 0)
-    {
-        buzzerBusy = true;
-        for (int i = 0; i < 3; i++)
-        {
-            digitalWrite(PIN_BUZZER, HIGH);
-            delay(200);
-            digitalWrite(PIN_BUZZER, LOW);
-            delay(200);
-        }
-        buzzerBusy = false;
-        mqtt.publish(TOPIC_ACK, "{\"status\":\"done\",\"action\":\"play\"}");
-    }
-    else if (strcmp(action, "stop") == 0)
-    {
-        buzzerBusy = false; // clear flag on stop too
-        digitalWrite(PIN_BUZZER, LOW);
-        mqtt.publish(TOPIC_ACK, "{\"status\":\"done\",\"action\":\"stop\"}");
-    }
-}
-
-// ── beepMotionAlert() ─────────────────────────────────────
-// Fires a single 200ms buzzer beep on PIR rising edge.
-// Skipped entirely if buzzerBusy is true (command running).
-void beepMotionAlert()
-{
-    digitalWrite(PIN_BUZZER, HIGH);
-    delay(200);
-    digitalWrite(PIN_BUZZER, LOW);
-}
-
-// ── setTrafficLight() ─────────────────────────────────────
-// Turns on one LED based on lux from local BH1750:
-//   lux < 50   → RED    (too dark — bad for focus)
-//   lux < 200  → YELLOW (moderate — acceptable)
-//   lux >= 200 → GREEN  (good lighting for focus)
 void setTrafficLight(float lux)
 {
     digitalWrite(PIN_LED_RED, LOW);
@@ -285,20 +211,29 @@ void setTrafficLight(float lux)
     digitalWrite(PIN_LED_GREEN, LOW);
 
     if (lux < 50)
+    {
+        digitalWrite(PIN_LED_YELLOW, LOW);
+        digitalWrite(PIN_LED_GREEN, LOW);
         digitalWrite(PIN_LED_RED, HIGH);
+    }
+
     else if (lux < 200)
+    {
+
+        digitalWrite(PIN_LED_GREEN, LOW);
+        digitalWrite(PIN_LED_RED, LOW);
         digitalWrite(PIN_LED_YELLOW, HIGH);
+    }
+
     else
+    {
+        digitalWrite(PIN_LED_YELLOW, LOW);
+
+        digitalWrite(PIN_LED_RED, LOW);
         digitalWrite(PIN_LED_GREEN, HIGH);
+    }
 }
 
-// ── showOLED() ────────────────────────────────────────────
-// Redraws OLED every loop with latest sensor values:
-//   Row 0 (y= 0): header
-//   Row 1 (y=12): temperature + fan state
-//   Row 2 (y=22): humidity
-//   Row 3 (y=32): air quality raw value + alert flag
-//   Row 4 (y=42): lux + LOW warning if below threshold
 void showOLED(float temp, float hum, int mq_raw, int mq_alert, float lux, bool fan)
 {
     display.clearDisplay();
@@ -327,9 +262,26 @@ void showOLED(float temp, float hum, int mq_raw, int mq_alert, float lux, bool f
     display.display();
 }
 
-// ── connectWiFi() ─────────────────────────────────────────
-// Joins the WiFi network from config.h.
-// Times out after 15 seconds if AP is unreachable.
+// ── MQTT callback: receive Sender telemetry ───────────────
+void onTelemetry(char *topic, byte *payload, unsigned int len)
+{
+    StaticJsonDocument<512> doc;
+    DeserializationError err = deserializeJson(doc, payload, len);
+    if (err)
+    {
+        Serial.println("[MQTT RX] Failed to parse telemetry JSON");
+        return;
+    }
+
+    JsonObject s = doc["payload"]["sensors"];
+    remoteTemp = s["temp_c"] | NAN;
+    remoteHum = s["humidity"] | NAN;
+    remoteLux = s["lux"] | NAN;
+
+    Serial.printf("[MQTT RX] remoteTemp=%.1f  remoteHum=%.1f  remoteLux=%.1f\n",
+                  remoteTemp, remoteHum, remoteLux);
+}
+
 void connectWiFi()
 {
     WiFi.mode(WIFI_STA);
@@ -349,22 +301,18 @@ void connectWiFi()
     Serial.println("\n[WiFi] IP: " + WiFi.localIP().toString());
 }
 
-// ── connectMQTT() ─────────────────────────────────────────
-// Connects to Mosquitto broker as "focuscube-listener".
-// Registers onCommand callback and subscribes to TOPIC_CMD
-// with QoS 1 so no commands are missed on reconnect.
-// Retries every 3 seconds on failure.
 void connectMQTT()
 {
     mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-    mqtt.setCallback(onCommand);
+    mqtt.setCallback(onTelemetry);
+
     while (!mqtt.connected())
     {
         Serial.print("[MQTT] Connecting as focuscube-listener ...");
         if (mqtt.connect("focuscube-listener"))
         {
             Serial.println("OK");
-            mqtt.subscribe(TOPIC_CMD, 1); // QoS 1 — no missed commands
+            mqtt.subscribe(TOPIC_TELE, 1);
         }
         else
         {
@@ -374,7 +322,6 @@ void connectMQTT()
     }
 }
 
-// ── setup() ───────────────────────────────────────────────
 void setup()
 {
     Serial.begin(115200);
@@ -384,20 +331,17 @@ void setup()
     pinMode(PIN_MQ135_DO, INPUT);      // MQ135 digital alert
     pinMode(PIN_MQ135_AO, INPUT);      // MQ135 analog raw
     pinMode(PIN_BUTTON, INPUT_PULLUP); // tactile button
-    pinMode(PIN_BUZZER, OUTPUT);       // active buzzer
     pinMode(PIN_LED_RED, OUTPUT);      // traffic light red
     pinMode(PIN_LED_YELLOW, OUTPUT);   // traffic light yellow
     pinMode(PIN_LED_GREEN, OUTPUT);    // traffic light green
     pinMode(PIN_FAN, OUTPUT);          // fan relay/transistor
 
-    // All outputs OFF at boot
-    digitalWrite(PIN_BUZZER, LOW);
     digitalWrite(PIN_LED_RED, LOW);
     digitalWrite(PIN_LED_YELLOW, LOW);
     digitalWrite(PIN_LED_GREEN, LOW);
-    digitalWrite(PIN_FAN, LOW);
+    digitalWrite(PIN_FAN, HIGH); // assume active-LOW relay: HIGH = OFF
 
-    dht.begin();
+    dht.begin();        // still available if you want local DHT later
     Wire.begin(21, 22); // I2C: SDA=21, SCL=22
 
     if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE))
@@ -422,61 +366,67 @@ void setup()
     Serial.println("[LISTENER] Ready");
 }
 
-// ── loop() ────────────────────────────────────────────────
 void loop()
 {
     if (!mqtt.connected())
         connectMQTT();
-    mqtt.loop(); // process incoming TOPIC_CMD messages
+    mqtt.loop();
 
-    // ── Read all sensors ──────────────────────────────────
-    float temp = dht.readTemperature();       // °C
-    float hum = dht.readHumidity();           // %
-    int pir = digitalRead(PIN_PIR);           // HIGH = motion
-    int mq_raw = analogRead(PIN_MQ135_AO);    // 0–4095
-    int mq_alert = digitalRead(PIN_MQ135_DO); // HIGH = bad air
-    float lux = lightMeter.readLightLevel();  // lux
+    // ── Local sensors only (lux/temp/hum come from Sender via MQTT) ──
+    int pir = digitalRead(PIN_PIR);
+    int mq_raw = analogRead(PIN_MQ135_AO);
+    int mq_alert = digitalRead(PIN_MQ135_DO);
 
-    // ── Rule 1: Fan hysteresis ────────────────────────────
-    // ON  when temp rises above FAN_ON_TEMP  (30°C)
-    // OFF when temp falls below FAN_OFF_TEMP (28°C)
-    // The 2°C gap prevents rapid ON/OFF switching
-    if (!isnan(temp))
+    Serial.printf("[MQTT/FAN] remoteTemp=%.2f  fanOn=%s\n",
+                  remoteTemp, fanOn ? "ON" : "OFF");
+
+    // ── Rule 1: Fan hysteresis using remoteTemp ───────────
+    if (isnan(remoteTemp))
     {
-        if (temp >= FAN_ON_TEMP)
-            fanOn = true;
-        if (temp <= FAN_OFF_TEMP)
-            fanOn = false;
+        Serial.println("[FAN DEBUG] remoteTemp is NaN -> no telemetry yet");
     }
+    else
+    {
+        if (remoteTemp >= FAN_ON_TEMP)
+        {
+            fanOn = true;
+            Serial.println("[FAN] threshold reached (remote), turning ON");
+        }
+        if (remoteTemp <= FAN_OFF_TEMP)
+        {
+            fanOn = false;
+            Serial.println("[FAN] threshold reached (remote), turning OFF");
+        }
+    }
+
+    // active-LOW relay: LOW = ON, HIGH = OFF
     digitalWrite(PIN_FAN, fanOn ? HIGH : LOW);
 
-    // ── Rule 2: Traffic light LEDs ────────────────────────
-    // Reads lux from local BH1750 and lights one LED.
-    // Debug line below — remove once LED works correctly
-    Serial.printf("[LUX DEBUG] %.1f lux\n", lux);
-    setTrafficLight(lux);
-
-    // ── Rule 3: PIR beep on motion start ─────────────────
-    // Triggers beepMotionAlert() only on LOW→HIGH edge.
-    // Skipped if buzzerBusy=true (command is running).
-    if (pir == HIGH && lastPirState == LOW && !buzzerBusy)
+    // ── Rule 2: Traffic light LEDs using remoteLux ────────
+    if (isnan(remoteLux))
+        Serial.println("[LUX DEBUG] remoteLux is NaN -> no telemetry yet");
+    else
     {
-        beepMotionAlert();
-        Serial.println("[PIR] Motion detected → beep");
+        Serial.printf("[LUX DEBUG] remoteLux=%.1f lux\n", remoteLux);
+        setTrafficLight(remoteLux);
     }
+
+    // ── Rule 3: PIR log on motion start ───────────────────
+    if (pir == HIGH && lastPirState == LOW)
+        Serial.println("[PIR] Motion detected");
     lastPirState = pir;
 
     // ── Rule 4: OLED update ───────────────────────────────
-    showOLED(temp, hum, mq_raw, mq_alert, lux, fanOn);
+    showOLED(remoteTemp, remoteHum, mq_raw, mq_alert, remoteLux, fanOn);
 
     Serial.printf("[LISTENER] temp=%.1f fan=%s lux=%.0f air=%s pir=%s\n",
-                  temp,
+                  remoteTemp,
                   fanOn ? "ON" : "OFF",
-                  lux,
+                  remoteLux,
                   mq_alert ? "BAD" : "OK",
                   pir == HIGH ? "MOTION" : "still");
 
-    delay(300);
+    delay(500);
 }
 
 #endif // DEVICE_LISTENER

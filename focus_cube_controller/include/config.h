@@ -42,8 +42,8 @@
 #define OLED_ADDR     0x3C
 
 // ─── Thresholds: Temperature / Fan ────────────────────────
-#define FAN_ON_TEMP   30.0f
-#define FAN_OFF_TEMP  28.0f
+#define FAN_ON_TEMP   27.5f
+#define FAN_OFF_TEMP  27.0f
 
 // ─── Thresholds: Air Quality (MQ135 analog) ───────────────
 // Raw ADC 0–4095 on ESP32 12-bit
