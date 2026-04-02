@@ -1,8 +1,14 @@
 # test_model.py
 import joblib
+from pathlib import Path
 import numpy as np
 
-model = joblib.load("TGGS.joblib")
+model_path = Path(__file__).resolve().parent / "model" / "TGGS.joblib"
+if not model_path.exists():
+    raise FileNotFoundError(f"Model file not found: {model_path}. "
+                            "Ensure you run this from the project root or use `uv run python test_model.py`.")
+
+model = joblib.load(model_path)
 
 LABEL_MAP = {0: "BAD", 1: "NEUTRAL", 2: "GOOD"}
 

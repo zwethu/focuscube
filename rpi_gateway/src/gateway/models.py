@@ -78,6 +78,7 @@ class FocusScore(BaseModel):
     components: FocusComponents = Field(default_factory=FocusComponents)
     sensors:    SensorPayload   = Field(default_factory=SensorPayload)
     derived:    dict            = Field(default_factory=dict)
+    mood_label: str = "UNKNOWN" 
 
 
 # ── Outbound: commands sent TO the ESP32 Listener ─────────────────
