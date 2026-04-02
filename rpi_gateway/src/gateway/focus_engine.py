@@ -9,6 +9,7 @@ from typing import Deque
 
 from gateway.config import ThresholdConfig
 from gateway.models import CanonicalEvent, FocusComponents, FocusScore, SensorPayload
+from rpi_gateway.src.gateway.predictor import predict_mood
 
 
 # ── Focus state enum (matches your C typedef) ────────────────────
@@ -150,6 +151,15 @@ def score_event(
         event.payload.get("sensors", event.payload)
     )
 
+    mood_label = "UNKNOWN"
+    if all(v is not None for v in [sensors.temp_c, sensors.humidity, sensors.mq135_raw, sensors.lux]):
+        mood_label = predict_mood(
+            temp_c=sensors.temp_c,
+            humidity=sensors.humidity,
+            air_quality_index=sensors.mq135_raw,  # ← AQI maps to mq135_raw
+            lux=sensors.lux,
+        )
+
     # Update sliding window tracker
     tracker.update(sensors)
     derived = tracker.compute()
@@ -185,6 +195,7 @@ def score_event(
         components=components,
         sensors=sensors,
         derived=asdict(derived),
+        mood_label=mood_label,
     )
 
 

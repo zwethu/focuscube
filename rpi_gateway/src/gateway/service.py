@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
+import json
 
 from gateway.config import AppConfig
 from gateway.focus_engine import SessionTracker, score_event
@@ -11,6 +12,7 @@ from gateway.metrics import Metrics
 from gateway.models import CanonicalEvent, ListenerCommand
 from gateway.mqtt_bridge import MQTTBridge
 from gateway.state import LiveState
+from rpi_gateway.src.gateway.predictor import predict_mood
 
 
 class GatewayService:
@@ -99,6 +101,21 @@ class GatewayService:
                 self._logger.debug(
                     "Focus score=%d label=%s", focus.score, focus.label
                 )
+                sensors = focus.sensors
+                if all(v is not None for v in [
+                    sensors.temp_c, sensors.humidity, sensors.mq135_raw, sensors.lux
+                ]):
+                    aqi = int((sensors.mq135_raw / 4095) * 150)  # scale to 0-150
+                    mood = predict_mood(
+                        temp_c=sensors.temp_c,
+                        humidity=sensors.humidity,
+                        air_quality_index=aqi,
+                        lux=sensors.lux,
+                    )
+                    self._mqtt.publish_command(
+                        ListenerCommand(action="mood", reason=mood)
+                    )
+                    self._logger.info("[MOOD] Predicted=%s", mood)
 
         # PIR / other events → event log
         elif event.category.startswith("event."):
