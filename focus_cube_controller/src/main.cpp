@@ -358,7 +358,7 @@ void loop() {
     }
 
     // active-LOW relay: LOW = ON, HIGH = OFF
-    digitalWrite(PIN_FAN, fanOn ? LOW : HIGH);
+    digitalWrite(PIN_FAN, fanOn ? HIGH : LOW);
 
     // ── Rule 2: Traffic light LEDs using remoteLux ────────
     if (isnan(remoteLux))

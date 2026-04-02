@@ -32,8 +32,8 @@
 
 // ─── Thresholds ───────────────────────────────────────────
 #define LUX_LOW_THRESHOLD 50.0f
-#define FAN_ON_TEMP       27.5f
-#define FAN_OFF_TEMP      27.0f
+#define FAN_ON_TEMP       27.0f
+#define FAN_OFF_TEMP      25.0f
 #define MQ135_BAD_DO      1
 #define MQ135_MID_LOW     1500
 #define MQ135_GOOD_LOW    2500
