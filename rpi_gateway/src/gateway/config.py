@@ -28,7 +28,6 @@ class TopicConfig(BaseModel):
     )
     # Topics the gateway publishes TO
     cmd_topic: str = "focuscube/listener/cmd"
-    ack_topic: str = "focuscube/listener/ack"
 
 
 class ThresholdConfig(BaseModel):
