@@ -9,7 +9,7 @@ from typing import Deque
 
 from gateway.config import ThresholdConfig
 from gateway.models import CanonicalEvent, FocusComponents, FocusScore, SensorPayload
-from rpi_gateway.src.gateway.predictor import predict_mood
+from gateway.predictor import predict_mood
 
 
 # ── Focus state enum (matches your C typedef) ────────────────────
@@ -156,7 +156,7 @@ def score_event(
         mood_label = predict_mood(
             temp_c=sensors.temp_c,
             humidity=sensors.humidity,
-            air_quality_index=sensors.mq135_raw,  # ← AQI maps to mq135_raw
+            air_quality_index=int((sensors.mq135_raw / 4095) * 150),  # ← AQI maps to mq135_raw
             lux=sensors.lux,
         )
 

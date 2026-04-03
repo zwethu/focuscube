@@ -4,7 +4,7 @@ import joblib
 import numpy as np
 from pathlib import Path
 
-_MODEL_PATH = Path(__file__).resolve().parent.parent.parent / "models" / "TGGS.joblib"
+_MODEL_PATH = Path(__file__).resolve().parent.parent.parent / "model" / "TGGS.joblib"
 _model = joblib.load(_MODEL_PATH)
 
 # Label map matching training: 0=Bad, 1=Neutral, 2=Good

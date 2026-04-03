@@ -12,7 +12,7 @@ from gateway.metrics import Metrics
 from gateway.models import CanonicalEvent, ListenerCommand
 from gateway.mqtt_bridge import MQTTBridge
 from gateway.state import LiveState
-from rpi_gateway.src.gateway.predictor import predict_mood
+from gateway.predictor import predict_mood
 
 
 class GatewayService:

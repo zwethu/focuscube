@@ -1,0 +1,27 @@
+2026-04-02T15:06:31 [INFO] gateway.app: Loaded config from config/gateway.toml
+2026-04-02T15:06:31 [INFO] gateway.app: FocusCube gateway starting...
+2026-04-02T15:06:31 [INFO] gateway.app: MQTT bridge connected → 127.0.0.1:1883
+2026-04-02T15:06:31 [INFO] gateway.app: Connected to MQTT broker 127.0.0.1:1883
+2026-04-02T15:06:31 [INFO] gateway.app: REST API listening on http://0.0.0.0:5000
+2026-04-02T15:06:31 [INFO] gateway.app: Subscribed → focuscube/sender/telemetry
+2026-04-02T15:06:31 [INFO] gateway.app: Subscribed → focuscube/sender/event/pir
+2026-04-02T15:06:31 [INFO] gateway.app: Subscribed → focuscube/listener/ack
+2026-04-03T10:01:07 [INFO] gateway.app: Loaded config from config/gateway.toml
+2026-04-03T10:01:07 [INFO] gateway.app: FocusCube gateway starting...
+2026-04-03T10:01:07 [INFO] gateway.app: MQTT bridge connected → 127.0.0.1:1883
+2026-04-03T10:01:07 [INFO] gateway.app: Connected to MQTT broker 127.0.0.1:1883
+2026-04-03T10:01:07 [INFO] gateway.app: REST API listening on http://0.0.0.0:5000
+2026-04-03T10:01:07 [INFO] gateway.app: Subscribed → focuscube/sender/telemetry
+2026-04-03T10:01:07 [INFO] gateway.app: Subscribed → focuscube/sender/event/pir
+2026-04-03T10:01:07 [INFO] gateway.app: Subscribed → focuscube/listener/ack
+2026-04-03T10:01:39 [INFO] gateway.app: Shutdown signal received
+2026-04-03T10:01:40 [WARNING] gateway.app: Disconnected from MQTT broker: 0
+2026-04-03T10:01:40 [INFO] gateway.app: FocusCube gateway stopped.
+2026-04-03T10:22:23 [INFO] gateway.app: Loaded config from config/gateway.toml
+2026-04-03T10:22:23 [INFO] gateway.app: FocusCube gateway starting...
+2026-04-03T10:22:23 [INFO] gateway.app: MQTT bridge connected → 127.0.0.1:1883
+2026-04-03T10:22:23 [INFO] gateway.app: Connected to MQTT broker 127.0.0.1:1883
+2026-04-03T10:22:23 [INFO] gateway.app: REST API listening on http://0.0.0.0:5000
+2026-04-03T10:22:23 [INFO] gateway.app: Subscribed → focuscube/sender/telemetry
+2026-04-03T10:22:23 [INFO] gateway.app: Subscribed → focuscube/sender/event/pir
+2026-04-03T10:22:23 [INFO] gateway.app: Subscribed → focuscube/listener/ack

@@ -321,6 +321,7 @@ void connectMQTT() {
         if (mqtt.connect("focuscube-listener")) {
             Serial.println("OK");
             mqtt.subscribe(TOPIC_CMD, 1);
+            mqtt.subscribe(TOPIC_TELE, 1);
         } else {
             Serial.printf("FAILED rc=%d     retry 3s\n", mqtt.state());
             delay(3000);

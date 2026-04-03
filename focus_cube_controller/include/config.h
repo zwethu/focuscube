@@ -5,7 +5,7 @@
 #define WIFI_PASS "!tggs2025"
 
 // ─── MQTT Broker = Raspberry Pi IP ───────────────────────
-#define MQTT_BROKER "192.168.0.164"
+#define MQTT_BROKER "192.168.0.110"
 #define MQTT_PORT 1883
 
 // ─── Topics ───────────────────────────────────────────────
